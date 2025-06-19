@@ -49,6 +49,14 @@ public class IllusionRiddleLevel extends DevDungeonLevel implements ITickable {
       };
   private static final MonsterType BOSS_TYPE = MonsterType.ILLUSION_BOSS;
 
+
+
+  private static final int FOG_DISTANCE_WITH_TORCH = 3;
+  private static final double BOSS_HEALTH_THRESHOLD = 0.5;
+  private static final int TELEPORTER_START_INDEX = 65;
+  private static final int TELEPORTER_END_INDEX = 127;
+  private static final long PIT_OPENING_BASE_TIME = 50L;
+
   // Spawn Points / Locations
   private final List<DevDungeonRoom> rooms;
   private final Coordinate levelBossSpawn;
