@@ -156,148 +156,128 @@ public class IllusionRiddleLevel extends DevDungeonLevel implements ITickable {
     this.chestSpawns = new Coordinate[] {this.customPoints().get(161)};
   }
 
+
+
   @Override
-  public void onTick(boolean isFirstTick) {
+public void onTick(boolean isFirstTick) {
     if (isFirstTick) {
-      DialogFactory.showTextPopup(
-          "Wait, who turned off the lights? Try to find a way out of this dark place.",
-          "Level " + DevDungeon.DUNGEON_LOADER.currentLevelIndex() + ": The Illusion Riddle");
-
-      ((ExitTile) this.endTile()).close(); // close exit at start (to force defeating the boss)
-      this.doorTiles().forEach(DoorTile::close);
-      this.pitTiles()
-          .forEach(
-              pit -> {
-                pit.timeToOpen(50L * Game.currentLevel().RANDOM.nextInt(1, 5));
-                pit.close();
-              });
-      this.rooms.forEach(DevDungeonRoom::spawnEntities);
-
-      // Create teleporters
-      for (int i = 65; i < 127; i += 2) {
-        TeleporterSystem.getInstance()
-            .registerTeleporter(
-                new Teleporter(this.customPoints().get(i), this.customPoints().get(i + 1)));
-      }
-
-      // Setup TP Targets for TPBallSkill
-      int[] roomIndices = {0, 1, 2, 3, 7};
-      for (int ri : roomIndices) {
-        this.addTPTarget(
-            this.rooms.get(ri).tiles().stream()
-                .filter(tile -> tile.levelElement() == LevelElement.FLOOR)
-                .map(Tile::coordinate)
-                .toArray(Coordinate[]::new));
-      }
-
-      // Open Pits for last room (boss room) and extinguish torches
-      this.rooms.getLast().tiles().stream()
-          .filter(t -> t.levelElement() == LevelElement.PIT)
-          .map(t -> (PitTile) t)
-          .forEach(PitTile::open);
-      for (Entity torch : this.rooms.getLast().torches()) {
-        torch
-            .fetch(InteractionComponent.class)
-            .orElseThrow(() -> MissingComponentException.build(torch, InteractionComponent.class))
-            .triggerInteraction(torch, Game.hero().orElse(null));
-      }
-
-      // Draw teleporter connections
-      TeleporterSystem.getInstance().teleporter().stream()
-          .map(Teleporter::from)
-          .forEach((tp) -> this.tileAt(tp).tintColor(0x444444FF)); // dark tint for teleporter
-      TeleporterSystem.getInstance().teleporter().stream()
-          .map(Teleporter::to)
-          .forEach((tp) -> this.tileAt(tp).tintColor(0x444444FF)); // dark tint for teleporter
-
-      Entity b =
-          EntityUtils.spawnBoss(
-              BOSS_TYPE,
-              this.levelBossSpawn,
-              (e) -> {
-                ((FogOfWarSystem) Game.systems().get(FogOfWarSystem.class)).active(false);
-                // turn of all torches on death
-                DevDungeonRoom devDungeonRoom = this.getCurrentRoom();
-                if (devDungeonRoom == null || devDungeonRoom != this.rooms.getLast()) {
-                  return; // should not happen, just if boss dies while not in boss room
-                }
-                this.lightTorch(devDungeonRoom, 0, false);
-                this.lightTorch(devDungeonRoom, 1, false);
-
-                this.exitTiles().forEach(tile -> tile.tintColor(-1)); // Workaround due to FogOfWar
-              });
-      HealthComponent bhc =
-          b.fetch(HealthComponent.class)
-              .orElseThrow(() -> MissingComponentException.build(b, HealthComponent.class));
-      bhc.onHit(
-          (cause, dmg) -> {
-            int currentHealth = bhc.currentHealthpoints() - dmg.damageAmount();
-            int maxHealth = bhc.maximalHealthpoints();
-
-            DevDungeonRoom devDungeonRoom = this.getCurrentRoom();
-            if (devDungeonRoom == null || devDungeonRoom != this.rooms.getLast()) {
-              return;
-            }
-
-            double healthPercentage = (double) currentHealth / maxHealth;
-            if (healthPercentage <= 0.5) {
-              this.lightTorch(devDungeonRoom, 0, true);
-              this.lightTorch(devDungeonRoom, 1, true);
-            }
-          });
-
-      // Secret Passages
-      EntityUtils.spawnLever(
-          this.leverSpawns[0].toCenteredPoint(),
-          new OpenPassageCommand(this.secretPassages[0][0], this.secretPassages[0][1]));
-      EntityUtils.spawnLever(
-          this.leverSpawns[1].toCenteredPoint(),
-          new OpenPassageCommand(this.secretPassages[1][0], this.secretPassages[1][1]));
-      EntityUtils.spawnLever(
-          this.leverSpawns[2].toCenteredPoint(),
-          new OpenPassageCommand(this.secretPassages[2][0], this.secretPassages[2][1]));
-      this.spawnChestsAndCauldrons();
+        initializeLevel();
     }
+    handleRoomTransition();
+    handleTorchLogic();
+    riddleHandler.onTick(isFirstTick);
+}
 
-    if (this.lastRoom != this.getCurrentRoom()) {
-      // Handle Mob AI (disable AI for mobs in other rooms, enable for mobs in current room)
-      if (this.lastRoom != null) {
-        this.lastRoom.mobAI(false);
-      }
-      if (this.getCurrentRoom() != null) {
-        this.getCurrentRoom().mobAI(true);
-      }
 
-      if (this.getCurrentRoom() != null) {
-        for (Entity mob : this.getCurrentRoom().mobs()) {
-          Consumer<Entity> fightAI =
-              mob.fetch(AIComponent.class)
-                  .orElseThrow(() -> MissingComponentException.build(mob, AIComponent.class))
-                  .fightBehavior();
-          if (fightAI instanceof RangeAI rangeAI) {
-            rangeAI.getSkill().setLastUsedToNow();
-          }
-        }
-      }
 
-      this.lastRoom = this.getCurrentRoom();
-    }
+private void initializeLevel() {
+   DialogFactory.showTextPopup(
+       "Wait, who turned off the lights? Try to find a way out of this dark place.",
+       "Level " + DevDungeon.DUNGEON_LOADER.currentLevelIndex() + ": The Illusion Riddle");
 
-    // Anti Torch Logic
-    if (this.lastRoom != null && this.lastTorchState != this.lastRoom.isAnyTorchActive()) {
-      this.lastTorchState = this.lastRoom.isAnyTorchActive();
-      if (this.lastRoom.isAnyTorchActive()) {
-        FogOfWarSystem.VIEW_DISTANCE = 3;
-        ((FogOfWarSystem) Game.systems().get(FogOfWarSystem.class)).revert();
-      } else {
-        FogOfWarSystem.VIEW_DISTANCE = this.originalFogOfWarDistance;
-        // no revert, is needed as the fog of war should only increase
-        // revert is only needed if the fog of war decreases in distance
-      }
-    }
+   ((ExitTile) this.endTile()).close(); // close exit at start (to force defeating the boss)
+   this.doorTiles().forEach(DoorTile::close);
+   this.pitTiles()
+       .forEach(
+           pit -> {
+             pit.timeToOpen(50L * Game.currentLevel().RANDOM.nextInt(1, 5));
+             pit.close();
+           });
+   this.rooms.forEach(DevDungeonRoom::spawnEntities);
 
-    this.riddleHandler.onTick(isFirstTick);
-  }
+   // Create teleporters
+   for (int i = 65; i < 127; i += 2) {
+     TeleporterSystem.getInstance()
+         .registerTeleporter(
+             new Teleporter(this.customPoints().get(i), this.customPoints().get(i + 1)));
+   }
+
+   // Setup TP Targets for TPBallSkill
+   int[] roomIndices = {0, 1, 2, 3, 7};
+   for (int ri : roomIndices) {
+     this.addTPTarget(
+         this.rooms.get(ri).tiles().stream()
+             .filter(tile -> tile.levelElement() == LevelElement.FLOOR)
+             .map(Tile::coordinate)
+             .toArray(Coordinate[]::new));
+   }
+
+   // Open Pits for last room (boss room) and extinguish torches
+   this.rooms.getLast().tiles().stream()
+       .filter(t -> t.levelElement() == LevelElement.PIT)
+       .map(t -> (PitTile) t)
+       .forEach(PitTile::open);
+   for (Entity torch : this.rooms.getLast().torches()) {
+     torch
+         .fetch(InteractionComponent.class)
+         .orElseThrow(() -> MissingComponentException.build(torch, InteractionComponent.class))
+         .triggerInteraction(torch, Game.hero().orElse(null));
+   }
+
+   // Draw teleporter connections
+   TeleporterSystem.getInstance().teleporter().stream()
+       .map(Teleporter::from)
+       .forEach((tp) -> this.tileAt(tp).tintColor(0x444444FF)); // dark tint for teleporter
+   TeleporterSystem.getInstance().teleporter().stream()
+       .map(Teleporter::to)
+       .forEach((tp) -> this.tileAt(tp).tintColor(0x444444FF)); // dark tint for teleporter
+
+   Entity b =
+       EntityUtils.spawnBoss(
+           BOSS_TYPE,
+           this.levelBossSpawn,
+           (e) -> {
+             ((FogOfWarSystem) Game.systems().get(FogOfWarSystem.class)).active(false);
+             // turn of all torches on death
+             DevDungeonRoom devDungeonRoom = this.getCurrentRoom();
+             if (devDungeonRoom == null || devDungeonRoom != this.rooms.getLast()) {
+               return; // should not happen, just if boss dies while not in boss room
+             }
+             this.lightTorch(devDungeonRoom, 0, false);
+             this.lightTorch(devDungeonRoom, 1, false);
+
+             this.exitTiles().forEach(tile -> tile.tintColor(-1)); // Workaround due to FogOfWar
+           });
+   HealthComponent bhc =
+       b.fetch(HealthComponent.class)
+           .orElseThrow(() -> MissingComponentException.build(b, HealthComponent.class));
+   bhc.onHit(
+       (cause, dmg) -> {
+         int currentHealth = bhc.currentHealthpoints() - dmg.damageAmount();
+         int maxHealth = bhc.maximalHealthpoints();
+
+         DevDungeonRoom devDungeonRoom = this.getCurrentRoom();
+         if (devDungeonRoom == null || devDungeonRoom != this.rooms.getLast()) {
+           return;
+         }
+
+         double healthPercentage = (double) currentHealth / maxHealth;
+         if (healthPercentage <= 0.5) {
+           this.lightTorch(devDungeonRoom, 0, true);
+           this.lightTorch(devDungeonRoom, 1, true);
+         }
+       });
+
+   // Secret Passages
+   EntityUtils.spawnLever(
+       this.leverSpawns[0].toCenteredPoint(),
+       new OpenPassageCommand(this.secretPassages[0][0], this.secretPassages[0][1]));
+   EntityUtils.spawnLever(
+       this.leverSpawns[1].toCenteredPoint(),
+       new OpenPassageCommand(this.secretPassages[1][0], this.secretPassages[1][1]));
+   EntityUtils.spawnLever(
+       this.leverSpawns[2].toCenteredPoint(),
+       new OpenPassageCommand(this.secretPassages[2][0], this.secretPassages[2][1]));
+   this.spawnChestsAndCauldrons();
+}
+
+
+
+
+
+
+
+
 
   /** TODO: Refactor this method, and add JavaDoc */
   public void lightTorch(DevDungeonRoom r, int i, boolean lit) {
