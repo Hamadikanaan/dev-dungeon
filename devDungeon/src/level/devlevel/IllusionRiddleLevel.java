@@ -277,23 +277,29 @@ private void initializeLevel() {
 
 
 
-
-
-  /** TODO: Refactor this method, and add JavaDoc */
-  public void lightTorch(DevDungeonRoom r, int i, boolean lit) {
-    if (r.torches()[i]
-            .fetch(TorchComponent.class)
-            .orElseThrow(
-                () -> MissingComponentException.build(r.torches()[i], TorchComponent.class))
-            .lit()
-        == lit) return;
-    r.torches()[i]
+/**
+ * Toggles the torch state in the specified room.
+ * 
+ * @param room the room containing the torch
+ * @param torchIndex the index of the torch to toggle
+ * @param shouldBeLit the desired state of the torch
+ */
+public void lightTorch(DevDungeonRoom room, int torchIndex, boolean shouldBeLit) {
+    Entity torch = room.torches()[torchIndex];
+    TorchComponent torchComponent = torch
+        .fetch(TorchComponent.class)
+        .orElseThrow(() -> MissingComponentException.build(torch, TorchComponent.class));
+    
+    if (torchComponent.lit() == shouldBeLit) {
+        return;
+    }
+    
+    InteractionComponent interaction = torch
         .fetch(InteractionComponent.class)
-        .orElseThrow(
-            () -> MissingComponentException.build(r.torches()[i], InteractionComponent.class))
-        .triggerInteraction(r.torches()[i], Game.hero().orElse(null));
-  }
-
+        .orElseThrow(() -> MissingComponentException.build(torch, InteractionComponent.class));
+    
+    interaction.triggerInteraction(torch, Game.hero().orElse(null));
+}
   /**
    * Returns the current room the hero is in.
    *
